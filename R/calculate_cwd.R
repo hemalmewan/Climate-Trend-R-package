@@ -28,9 +28,9 @@ calculate_cwd <- function(nc_input, start_date = NULL,
                           region_name = NULL,   
                           threshold = 1, 
                           plot_result = TRUE,
-                          save_result = FALSE,              # <--- NEW
-                          output_dir = "Output_Maps",       # <--- NEW
-                          output_name = "CWD_Index") {      # <--- NEW
+                          save_result = FALSE,             
+                          output_dir = "Output_Maps",     
+                          output_name = "CWD_Index") {
   
   # --- 1. Load Data ---
   if (is.character(nc_input)) {
