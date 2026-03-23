@@ -21,6 +21,10 @@ help("calculate_trend_stats")
 help("plot_regional_timeseries")
 help("pre_whiten")
 help("calculate_spatial_wsds")
+help("calculate_wet_dry_timing")
+help("calculate_rainfall_thresholds")
+help("categorize_rainfall_intensity")
+
 
 ##======================================
 ##======================================
@@ -635,7 +639,77 @@ end_time <- Sys.time()
 # Calculate and print the total duration
 total_duration <- round(end_time - start_time, 2)
 message("\n--- Processing Complete ---")
-message("Total time taken: ", format(total_duration))                                                                                      
+message("Total time taken: ", format(total_duration))   
+
+
+##==========================================
+## Spatial Timing for Wet and Dry Seasons
+##=========================================
+# 1. Create separate lists for each specific metric
+wet_onset_list <- list()
+wet_retreat_list <- list()
+dry_onset_list <- list()
+dry_retreat_list <- list()
+
+message("Starting Spatial Timing processing...")
+start_time <- Sys.time() 
+
+for (file_index in 1:length(nc_files)) { 
+  
+  current_file <- nc_files[file_index]
+  year_string <- regmatches(current_file, regexpr("[0-9]{4}", current_file))
+  dynamic_start_date <- paste0(year_string, "-01-01")
+  
+  message("\nProcessing Year: ", year_string)
+  
+  # 2. Calculate the 4 timing layers for this year
+  yearly_timing <- calculate_wet_dry_timing(
+    nc_input = current_file,
+    start_date = dynamic_start_date, 
+    country = "ETH",
+    region_name = "Amhara",
+    wet_threshold = 20,
+    dry_threshold = 5,
+    window_size = 10,
+    plot_result = FALSE
+  )
+  
+  # 3. Pull the layers apart and put them in their specific lists!
+  wet_onset_list[[file_index]]   <- yearly_timing[[1]] # Layer 1 is Wet_Onset
+  wet_retreat_list[[file_index]] <- yearly_timing[[2]] # Layer 2 is Wet_Retreat
+  dry_onset_list[[file_index]]   <- yearly_timing[[3]] # Layer 3 is Dry_Onset
+  dry_retreat_list[[file_index]] <- yearly_timing[[4]] # Layer 4 is Dry_Retreat
+}
+
+# --- 4. STACK SEPARATELY ---
+message("\nStacking the 10-year maps...")
+wet_onset_10yr_stack   <- terra::rast(wet_onset_list)
+wet_retreat_10yr_stack <- terra::rast(wet_retreat_list)
+
+# --- 5. RUN SEPARATE TREND ANALYSES ---
+message("Running Mann-Kendall Trend Analysis for WET SEASON ONSET...")
+onset_trend_results <- calculate_trend_stats(
+  data_input = wet_onset_10yr_stack,
+  significance_level = 0.05,
+  cores = my_cores,
+  plot_result = TRUE
+)
+
+message("Running Mann-Kendall Trend Analysis for WET SEASON RETREAT...")
+retreat_trend_results <- calculate_trend_stats(
+  data_input = wet_retreat_10yr_stack,
+  significance_level = 0.05,
+  cores = my_cores,
+  plot_result = TRUE
+)
+
+# --- STOP THE CLOCK ---
+end_time <- Sys.time()
+
+total_duration <- round(end_time - start_time, 2)
+message("\n--- Processing Complete ---")
+message("Total time taken: ", format(total_duration))                                                                           
+
 
 
 ##============================================================
@@ -956,3 +1030,119 @@ kiremt_trend_results <- calculate_trend_stats(
   cores = my_cores,
   plot_result = TRUE
 )
+
+
+##===================================
+## Rainfall Thresholds Calculations
+##===================================
+message("Process Starting Cumulative for Precipitation Thresholds...")
+message("Calculating LOW and HIGH intensity threholds....")
+start_time <- Sys.time() ## start time
+my_thresholds <- calculate_rainfall_thresholds(
+  nc_files = nc_files,
+  cores = my_cores, 
+  ##save_path = "C:/Outputs/CHIRPS_Thresholds.tif"
+)
+
+ # Plot the maps to see the spatial variation!
+terra::plot(my_thresholds, main = c("Low Intensity Cutoff (mm)", "High Intensity Cutoff (mm)"))
+# --- STOP THE CLOCK ---
+end_time <- Sys.time()
+
+
+# Calculate and print the total duration
+total_duration <- round(end_time - start_time, 2)
+message("\n--- Processing Complete ---")
+message("Total time taken: ", format(total_duration))
+
+##==================================================================
+## Categorize the Daily Rainfall as LOW, MEDIUM AND HIGH intensity
+##==================================================================
+##Find out HOW MANY DAYS were categorized as Low/Med/High in 1981
+message("Process Starting............")
+message("Calculating number of days as low, medium and high.....")
+start_time <- Sys.time() ## start time
+intensity_days_1981 <- categorize_rainfall_intensity(
+  nc_year = nc_files[1],
+  threshold_map = my_thresholds,
+  metric = "days",
+  plot_result = TRUE
+)
+
+# --- STOP THE CLOCK ---
+end_time <- Sys.time()
+# Calculate and print the total duration
+total_duration <- round(end_time - start_time, 2)
+message("\n--- Processing Complete ---")
+message("Total time taken: ", format(total_duration))
+
+##==========================================
+## Intensity Categorization Trend Analysis
+##==========================================
+# 1. Create separate lists for each intensity category
+low_intensity_list <- list()
+med_intensity_list <- list()
+high_intensity_list <- list()
+
+message("Process Starting............")
+message("Calculating number of days as low, medium and high.....")
+start_time <- Sys.time()
+
+for (file_index in 1:length(nc_files)) {
+  
+  current_file <- nc_files[file_index]
+  year_string <- regmatches(current_file, regexpr("[0-9]{4}", current_file))
+  
+  # Note: The categorize function doesn't actually use start_date right now 
+  # unless you are subsetting by season, but it's good practice to keep it dynamic!
+  
+  message("\nProcessing Year: ", year_string)
+  
+  # Calculate the 3 layers (Low, Med, High) for this year
+  yearly_intensity <- categorize_rainfall_intensity(
+    nc_year = current_file,        # Fixed parameter name
+    threshold_map = my_thresholds,
+    metric = "days",
+    plot_result = FALSE
+  )
+  
+  # 2. Pull the layers apart and put them in their specific lists
+  low_intensity_list[[file_index]]  <- yearly_intensity[[1]] # Layer 1 is Low
+  med_intensity_list[[file_index]]  <- yearly_intensity[[2]] # Layer 2 is Medium
+  high_intensity_list[[file_index]] <- yearly_intensity[[3]] # Layer 3 is High
+  
+  # Name them cleanly
+  names(low_intensity_list)[file_index]  <- paste0("Low_", year_string)
+  names(med_intensity_list)[file_index]  <- paste0("Med_", year_string)
+  names(high_intensity_list)[file_index] <- paste0("High_", year_string)
+}
+
+# --- 3. STACK SEPARATELY ---
+message("\nStacking the 10-year intensity maps...")
+low_10yr_stack  <- terra::rast(low_intensity_list)
+med_10yr_stack  <- terra::rast(med_intensity_list)
+high_10yr_stack <- terra::rast(high_intensity_list)
+
+# --- 4. RUN SEPARATE TREND ANALYSES ---
+message("\nRunning Mann-Kendall Trend Analysis for HIGH INTENSITY Days...")
+high_trend_results <- calculate_trend_stats(
+  data_input = high_10yr_stack,    # Fixed: Passing the stack, not the list!
+  significance_level = 0.05,
+  cores = my_cores,
+  plot_result = TRUE
+)
+
+message("\nRunning Mann-Kendall Trend Analysis for LOW INTENSITY Days...")
+low_trend_results <- calculate_trend_stats(
+  data_input = low_10yr_stack,     
+  significance_level = 0.05,
+  cores = my_cores,
+  plot_result = TRUE
+)
+
+# --- STOP THE CLOCK ---
+end_time <- Sys.time()
+
+total_duration <- round(end_time - start_time, 2)
+message("\n--- Processing Complete ---")
+message("Total time taken: ", format(total_duration))
