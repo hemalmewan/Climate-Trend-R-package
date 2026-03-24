@@ -16,7 +16,7 @@ Wheather you are analyzing a single country or a specific hydrological river bas
 8. [Function Glossary](#7-function-glossary)
 9. [Getting Started (Vignettes)](#9-getting-started-vignettes) 
 
-## 1.Core Concepts & Golden Rules
+## 1. Core Concepts & Golden Rules
 Before you start writing code, you must understand the two types of climate indices in this package.Treating them the same way will result in scientifically incorrent data.
 
 ### Type 1: Counting/Absolute Indices (PRCPTOT, CDD, CWD, Rnnmm, Rxdday)
@@ -29,7 +29,7 @@ Before you start writing code, you must understand the two types of climate indi
 
   * **The Golden Rule("Merge First"):** You MUST merge your NetCDF file into a single, multi-year dataset BEFORE running these functions. Never run these inside a year-by-year loop.
 
-## 2.Data Preparation & Masking
+## 2. Data Preparation & Masking
 This package is optimized to use the `terra` package for spatial data. To save memory (RAM) and speed up caclulations, always clip your data to your specific study area before doing the math.
 
 ### Auto-Donwloading Country Boundaries
@@ -62,7 +62,7 @@ result <- calculate_prcptot(
   region = my_basin 
 )
 ```
-## 3.Workflow A:Counting Indices(Year-by-Year)
+## 3. Workflow A: Counting Indices(Year-by-Year)
 For basic indices, you can loop through your NetCDF files, calculate the index, and let the package automatically save the `.tif` maps to your hard drive.
 ```R
 nc_files <- list.files("Data/NCDF/", pattern = "\\.nc$", full.names = TRUE)
@@ -88,10 +88,10 @@ for (file in nc_files) {
 }
 ```
 
-## 4.Workflow B:Percentile & Multi-Month Indices (Merged Data)
+## 4. Workflow B: Percentile & Multi-Month Indices (Merged Data)
 For complex indices like **R95p** or **SPI-3**, you must merge the dataset first so the function can calculate the historical baseline.
 
-#### 1.Merge files
+#### 1. Merge files
 ```R
 nc_files <- list.files("Data/NCDF/", pattern = "\\.nc$", full.names = TRUE)
 full_data <- terra::rast(nc_files)
@@ -103,13 +103,13 @@ total_days <- terra::nlyr(full_data)
 terra::time(full_data) <- seq(from = as.Date("1981-01-01"), by = "day", length.out = total_days)
 ```
 
-#### 2.Crop early to save memory
+#### 2. Crop early to save memory
 ```R
 my_basin <- terra::vect("Shapefiles/Awash_Basin.shp")
 full_data <- terra::crop(full_data, terra::project(my_basin, terra::crs(full_data)), mask = TRUE)
 ```
 
-#### 3.Calculate R95p for the whole 30-year stack at once
+#### 3. Calculate R95p for the whole 30-year stack at once
 ```R
 r95p_stack <- calculate_r95p(
   nc_input = full_data,
@@ -120,11 +120,11 @@ r95p_stack <- calculate_r95p(
   output_name = "R95p_30yr_Stack"
 )
 ```
-## 5.Workflow C: Advanced Agricultural & Seasonal Metrics
+## 5. Workflow C: Advanced Agricultural & Seasonal Metrics
 Standard ETCCDI indices often miss the nuances of agricultural drought and shifting monsoons. This package includes custom spatial functions to target specific crop-survival metrics.
 
-#### Wet-Season Dry Spell(WSDS)
-Unlike standard CDD which evaluates the entire year (often just measuring the natural winter dry season), WSDS strictly measures crop-killing dry spells during the wet season.Mathematically, it evaluates an indicator sequence `$I_t$` for daily precipitation `$P_t$`below a threshold,finding the maximum continous streak:
+#### Wet-Season Dry Spell (WSDS)
+Unlike standard CDD which evaluates the entire year (often just measuring the natural winter dry season), WSDS strictly measures crop-killing dry spells during the wet season.Mathematically, it evaluates an indicator sequence $I_t$ for daily precipitation $P_t$ below a threshold,finding the maximum continous streak:
 $$WSDS = \max\left(\sum I_t\right)$$
 
 #### Calculate the longest dry spell specifically during the Kiremt season (June-Sept)
@@ -137,7 +137,7 @@ wsds_map <- calculate_spatial_wsds(
 ```
 
 #### Season Timing (Onset & Retreat)
-Determine the exact Julian Day of the year (DOY) when the Wet and Dry seasons begin and end. It uses a rolling window sum `$S_t$` over $w$ days to filter out `false starts`:
+Determine the exact Julian Day of the year (DOY) when the Wet and Dry seasons begin and end. It uses a rolling window sum $S_t$ over $w$ days to filter out `false starts`:
 $$S_t=\sum_{i=t-w+1}^{t}P_i$$
 
 #### Calculates 4 layers per year: Wet_Onset, Wet_Retreat, Dry_Onset, Dry_Retreat
@@ -148,7 +148,7 @@ timing_maps <- calculate_wet_dry_timing(
 )
 
 #### Localized Rainfall Intensity Thresholds
-Instead of using fixed thresholds(like>20mm), this tool calculates pixel-specific thresholds based on histrical capacity.It divides the total cumulative rainfall volume `$V$` into three equal parts to determine exactly what constitutes a "Low" or "High" intensity storm for the specific coordinate.
+Instead of using fixed thresholds(like>20mm), this tool calculates pixel-specific thresholds based on histrical capacity.It divides the total cumulative rainfall volume $V$ into three equal parts to determine exactly what constitutes a "Low" or "High" intensity storm for the specific coordinate.
 
 #### 1. Generate the historical threshold map (Lazy loads all years)
 ```R
@@ -162,7 +162,7 @@ intensity_days <- categorize_rainfall_intensity(
   metric = "days" # Can also use "depth" to measure total volume
 )
 ```
-## 6.Trend Analysis (Mann-Kendall & Sen's Slope)
+## 6. Trend Analysis (Mann-Kendall & Sen's Slope)
 Once you have a multi-year stack of an index(e.g.,30 layers of CDD or WSDS),you can run a pixel-by-pixel trend analysis. This uses parallel processing to speed up the heavy math.
 
 #### Pass your multi-year stack into the trend function
@@ -177,9 +177,9 @@ trends <- calculate_trend_stats(
   output_name = "R95p_Trend"
 )
 ```
-#### The result is a list containing Z_Score, P_Value, and Sen_Slope layers
+#### The result is a list containing Z Score, P Value, and Sen Slope layers
 
-## 7.Visualizing Time Series
+## 7. Visualizing Time Series
 To create regional averages(converting a 2D map into a 1D line or bar chart over time), use the build-in time series tool.
 
 #### Plots the spatial average of your R95p stack over 30 years
@@ -199,7 +199,7 @@ ts_data <- plot_regional_timeseries(
 write.csv(ts_data, "Awash_R95p_Timeseries.csv", row.names = FALSE)
 ```
 
-## 8.Function Glossary
+## 8. Function Glossary
 ### Precipiptation & Extremes
     calculate_prcptot():Total annual/monthly precipitation from wet days(>=1mm).
 
@@ -208,7 +208,7 @@ write.csv(ts_data, "Awash_R95p_Timeseries.csv", row.names = FALSE)
     calculate_rxdday():Max rainfall over a rolloing window(e.g.,Rx1day,Rx5day).
 
     calculate_r95p()/calculate_r99p():Total rain from extreme(95th/99th percentile) days.
-    
+
     calculate_r95ptot()/calculate_r99ptot():Percentage contribution of extreme days to the annual total.
 
 ### Drought & Spells
