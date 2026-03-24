@@ -1,35 +1,39 @@
 ## 📖 User Manual: Climate Trend Analysis & Index Toolkit
-Welcome to the Climate Trend Analysis Toolkit! This R package is designed to process massive NetCDF climate datasets, calculate standard ETCCDI precipitation and drought indices, and perform robudst Mann-Kendall trend analysis.
+Welcome to the Climate Trend Analysis Toolkit! This R package is designed to process massive NetCDF climate datasets, calculate standard ETCCDI precipitation and drought indices, compute advanced agricultural season metrics, and perform robudst Mann-Kendall trend analysis.
 
-Wheather you are analyzing a single country or a specific hydrological river basin, this toolkit handles the heavy lifting, parrallel processing, and spatial masking for you.
+Wheather you are analyzing a single country or a specific hydrological river basin, this toolkit handles the heavy computational lifting, parrallel processing, and spatial masking for you.
 
 ## 📑 Table of Contents
 1. [Core Concepts & Golden Rules](#1-core-concepts--golden-rules)
 2. [Data Preparation & Masking](#2-data-preparation--masking)
 3. [Workflow A: Counting Indices (Year-by-Year)](#3-workflow-a-counting-indices-year-by-year)
 4. [Workflow B: Percentile & Multi-Month Indices (Merged Data)](#4-workflow-b-percentile--multi-month-indices-merged-data)
-5. [Trend Analysis (Mann-Kendall & Sen's Slope)](#5-trend-analysis-mann-kendall--sens-slope)
-6. [Visualizing Time Series](#6-visualizing-time-series)
-7. [Function Glossary](#7-function-glossary)
+5. [Workflow C: Advanced Agricultural & Seasonal Metrics](#5-workflow-c-advanced-agricultural--seasonal-metrics)
+6. [Trend Analysis (Mann-Kendall & Sen's Slope)](#6-trend-analysis-mann-kendall--sens-slope)
+7. [Visualizing Time Series](#7-visualizing-time-series)
+6. [Trend Analysis (Mann-Kendall & Sen's Slope)](#5-trend-analysis-mann-kendall--sens-slope)
+7. [Visualizing Time Series](#6-visualizing-time-series)
+8. [Function Glossary](#7-function-glossary)
+9. [Getting Started (Vignettes)](#9-getting-started-vignettes) 
 
 ## 1.Core Concepts & Golden Rules
 Before you start writing code, you must understand the two types of climate indices in this package.Treating them the same way will result in scientifically incorrent data.
 
 ### Type 1: Counting/Absolute Indices (PRCPTOT, CDD, CWD, Rnnmm, Rxdday)
-    How they work: They look at a single year in isolation and count something(e.g.,"How many dry days were in 1985?").
+  * **How they work:** They look at a single year in isolation and count something(e.g.,"How many dry days were in 1985?").
 
-    How to process: You can process these inside a for loop, feeding the function one yearly .nc file at a time.
+  * **How to process:** You can process these inside a for loop, feeding the function one yearly .nc file at a time.
 
 ## Type 2: Percentile & Distribution Indices (R95p, R99p, R95pTOT, SPI)
-    How they work:They compare a single day or month against massive historical baseline(e.g., "Was today's rain extreme compared to the last 30 years?")
+  * **How they work:**They compare a single day or month against massive historical baseline(e.g., "Was today's rain extreme compared to the last 30 years?")
 
-    The Golden Rule("Merge First"): You MUST merge your NetCDF file into a single, multi-year dataset BEFORE running these functions. Never run these inside a year-by-year loop.
+  * **The Golden Rule("Merge First"):** You MUST merge your NetCDF file into a single, multi-year dataset BEFORE running these functions. Never run these inside a year-by-year loop.
 
 ## 2.Data Preparation & Masking
-This package is optimized to use the **terra** package for spatial data. To save memory (RAM) and speed up caclulations, always clip your data to your specific study area before doing the math.
+This package is optimized to use the `terra` package for spatial data. To save memory (RAM) and speed up caclulations, always clip your data to your specific study area before doing the math.
 
 ### Auto-Donwloading Country Boundaries
-If you want to analyze a country  or state, the toolkit can download the boundary for you automatically using the **country** and **region_name** arguments.
+If you want to analyze a country  or state, the toolkit can download the boundary for you automatically using the `country` and `region_name` arguments.
 
 ```R
 library(terra)
@@ -46,7 +50,7 @@ result <- calculate_prcptot(
 ```
 
 ### Using Custom Shapefiles (River Basins)
-If you are studying a specific watershed, load your shapefile via **terra::vect()** and pass it to the **region** argument.
+If you are studying a specific watershed, load your shapefile via `terra::vect()` and pass it to the `region` argument. The function will automatically crop the data to your exact basin shape.
 ```R
 my_basin <- terra::vect("Path/To/Awash_Basin.shp")
 ```
@@ -59,7 +63,7 @@ result <- calculate_prcptot(
 )
 ```
 ## 3.Workflow A:Counting Indices(Year-by-Year)
-For basic indices, you can loop through your NetCDF files, calculate the index, and let the package automatically save the **.tif** maps to your hard drive.
+For basic indices, you can loop through your NetCDF files, calculate the index, and let the package automatically save the `.tif` maps to your hard drive.
 ```R
 nc_files <- list.files("Data/NCDF/", pattern = "\\.nc$", full.names = TRUE)
 my_basin <- terra::vect("Shapefiles/Awash_Basin.shp")
@@ -84,7 +88,7 @@ for (file in nc_files) {
 }
 ```
 
-## 4.Workflow B:Percentile & Multi-Month Indices(Merged Data)
+## 4.Workflow B:Percentile & Multi-Month Indices (Merged Data)
 For complex indices like **R95p** or **SPI-3**, you must merge the dataset first so the function can calculate the historical baseline.
 
 #### 1.Merge files
@@ -116,9 +120,50 @@ r95p_stack <- calculate_r95p(
   output_name = "R95p_30yr_Stack"
 )
 ```
+## 5.Workflow C: Advanced Agricultural & Seasonal Metrics
+Standard ETCCDI indices often miss the nuances of agricultural drought and shifting monsoons. This package includes custom spatial functions to target specific crop-survival metrics.
 
-## 5.Trend Analysis (Mann-Kendall & Sen's Slope)
-Once you have a multi-year stack of an index(e.g.,30 layers of CDD),you can run a pixel-by-pixel trend analysis. This uses parallel processing to speed up the heavy math.
+#### Wet-Season Dry Spell(WSDS)
+Unlike standard CDD which evaluates the entire year (often just measuring the natural winter dry season), WSDS strictly measures crop-killing dry spells during the wet season.Mathematically, it evaluates an indicator sequence `$I_t$` for daily precipitation `$P_t$`below a threshold,finding the maximum continous streak:
+$$WSDS = \max\left(\sum I_t\right)$$
+
+#### Calculate the longest dry spell specifically during the Kiremt season (June-Sept)
+```R
+wsds_map <- calculate_spatial_wsds(
+  nc_input = "precip_1981.nc",
+  target_season = 6:9,
+  season_name = "Kiremt"
+)
+```
+
+#### Season Timing (Onset & Retreat)
+Determine the exact Julian Day of the year (DOY) when the Wet and Dry seasons begin and end. It uses a rolling window sum `$S_t$` over $w$ days to filter out `false starts`:
+$$S_t=\sum_{i=t-w+1}^{t}P_i$$
+
+#### Calculates 4 layers per year: Wet_Onset, Wet_Retreat, Dry_Onset, Dry_Retreat
+timing_maps <- calculate_wet_dry_timing(
+  nc_input = "precip_1981.nc",
+  wet_threshold = 20,
+  dry_threshold = 5
+)
+
+#### Localized Rainfall Intensity Thresholds
+Instead of using fixed thresholds(like>20mm), this tool calculates pixel-specific thresholds based on histrical capacity.It divides the total cumulative rainfall volume `$V$` into three equal parts to determine exactly what constitutes a "Low" or "High" intensity storm for the specific coordinate.
+
+#### 1. Generate the historical threshold map (Lazy loads all years)
+```R
+my_thresholds <- calculate_rainfall_thresholds(nc_files, cores = 4)
+```
+#### 2. Categorize a specific year using those thresholds
+```R
+intensity_days <- categorize_rainfall_intensity(
+  nc_year = "precip_1981.nc",
+  threshold_map = my_thresholds,
+  metric = "days" # Can also use "depth" to measure total volume
+)
+```
+## 6.Trend Analysis (Mann-Kendall & Sen's Slope)
+Once you have a multi-year stack of an index(e.g.,30 layers of CDD or WSDS),you can run a pixel-by-pixel trend analysis. This uses parallel processing to speed up the heavy math.
 
 #### Pass your multi-year stack into the trend function
 ```R
@@ -134,7 +179,7 @@ trends <- calculate_trend_stats(
 ```
 #### The result is a list containing Z_Score, P_Value, and Sen_Slope layers
 
-## 6.Visualizing Time Series
+## 7.Visualizing Time Series
 To create regional averages(converting a 2D map into a 1D line or bar chart over time), use the build-in time series tool.
 
 #### Plots the spatial average of your R95p stack over 30 years
@@ -154,20 +199,36 @@ ts_data <- plot_regional_timeseries(
 write.csv(ts_data, "Awash_R95p_Timeseries.csv", row.names = FALSE)
 ```
 
-## 7.Function Glossary
+## 8.Function Glossary
 ### Precipiptation & Extremes
     calculate_prcptot():Total annual/monthly precipitation from wet days(>=1mm).
+
     calculate_rnnmm():Count of days excedding a threshold(e.g.,R10mm,R20mm).
+
     calculate_rxdday():Max rainfall over a rolloing window(e.g.,Rx1day,Rx5day).
-    calculate_r95p()/calculate_r99p():Total rain from extreme(96th/99th percentile) days.
+
+    calculate_r95p()/calculate_r99p():Total rain from extreme(95th/99th percentile) days.
+    
     calculate_r95ptot()/calculate_r99ptot():Percentage contribution of extreme days to the annual total.
 
 ### Drought & Spells
     calculate_cdd():Consecutive Dry Days(longest streak of days<1mm).
+
     calculate_cwd():Consective Wet Days(longest streak of days>=1mm).
+
     calculate_spi():Standardized Precipitation Index(meteorological drought at 1,3,6, or 12-month scales).
+
+### Advanced Agricultural & Seasonal
+    calculate_spatial_wsds(): Wet-Season Dry Spells (mid-season agricultural drought).
+
+    calculate_wet_dry_timing(): Julian dates (DOY) for the onset and retreat of distinct seasons.
+
+    calculate_rainfall_thresholds(): Pixel-wise equal cumulative volume thresholds.
+
+    categorize_rainfall_intensity(): Classifies daily rainfall into localized Low/Medium/High frequency or depth.
 
 ### Analysis & Plotting
     calculate_trend_stats():Pixel-by-pixel Mann-Kendall significance and Sen's Slope magnitude.
+
     plot_regional_timeseries():Spatial averaging to genertes regional time-series line/bar graphs.
 
